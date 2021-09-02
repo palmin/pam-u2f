@@ -1390,6 +1390,7 @@ int do_authentication(const cfg_t *cfg, const device_t *devices,
     if (get_authenticators(cfg, devlist, ndevs, assert,
                            is_resident(devices[i].keyHandle), authlist)) {
       for (size_t j = 0; authlist[j] != NULL; j++) {
+        cued = 0;
         if (!set_opts(cfg, &opts, assert)) {
           if (cfg->debug)
             D(cfg->debug_file, "Failed to set assert options");
