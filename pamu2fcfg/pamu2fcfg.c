@@ -7,6 +7,13 @@
 #define TIMEOUT 15
 #define FREQUENCY 1
 
+#define PIN_SET 0x01
+#define PIN_UNSET 0x02
+#define UV_SET 0x04
+#define UV_UNSET 0x08
+#define UV_REQD 0x10
+#define UV_NOT_REQD 0x20
+
 #include <fido.h>
 
 #include <stdio.h>
@@ -282,6 +289,44 @@ err:
   return ok;
 }
 
+static int get_options(fido_dev_t *dev, int *flags) {
+  char *const *opts;
+  const bool *vals;
+  fido_cbor_info_t *info;
+  int r;
+
+  *flags = 0;
+
+  if (!fido_dev_is_fido2(dev))
+    return 0;
+
+  if ((info = fido_cbor_info_new()) == NULL) {
+    fprintf(stderr, "fido_cbor_info_new failed\n");
+    return -1;
+  }
+  if ((r = fido_dev_get_cbor_info(dev, info)) != FIDO_OK) {
+    fprintf(stderr, "fido_dev_get_cbor_info: %s (%d)\n", fido_strerr(r), r);
+    fido_cbor_info_free(&info);
+    return -1;
+  }
+
+  opts = fido_cbor_info_options_name_ptr(info);
+  vals = fido_cbor_info_options_value_ptr(info);
+  for (size_t i = 0; i < fido_cbor_info_options_len(info); i++) {
+    if (strcmp(opts[i], "clientPin") == 0) {
+      *flags |= vals[i] ? PIN_SET : PIN_UNSET;
+    } else if (strcmp(opts[i], "uv") == 0) {
+      *flags |= vals[i] ? UV_SET : UV_UNSET;
+    } else if (strcmp(opts[i], "makeCredUvNotRqd") == 0) {
+      *flags |= vals[i] ? UV_NOT_REQD : UV_REQD;
+    }
+  }
+
+  fido_cbor_info_free(&info);
+
+  return 0;
+}
+
 static void parse_args(int argc, char *argv[], struct args *args) {
   int c;
   enum {
@@ -394,6 +439,7 @@ int main(int argc, char *argv[]) {
   const fido_dev_info_t *di = NULL;
   const char *path = NULL;
   size_t ndevs = 0;
+  int flags = 0;
   int r;
 
   parse_args(argc, argv, &args);
@@ -462,6 +508,32 @@ int main(int argc, char *argv[]) {
   r = fido_dev_open(dev, path);
   if (r != FIDO_OK) {
     fprintf(stderr, "error: fido_dev_open (%d) %s\n", r, fido_strerr(r));
+    goto err;
+  }
+
+  if (get_options(dev, &flags) != 0) {
+    goto err;
+  }
+
+  if (args.pin_verification && !(flags & PIN_SET)) {
+    fprintf(stderr, "%s\n",
+            flags & PIN_UNSET
+              ? "Authenticator does not have a PIN. Please set it first."
+              : "Authenticator does not support PIN verification.");
+    goto err;
+  }
+  if (args.user_verification && !(flags & UV_SET)) {
+    fprintf(stderr, "%s\n",
+            flags & UV_UNSET
+              ? "Authenticator's built-in user verification method has not "
+                "been configured. Please enable it first."
+              : "Authenticator does not support built-in user verification.");
+    goto err;
+  }
+  if ((flags & (UV_REQD | PIN_SET | UV_SET)) == UV_REQD) {
+    fprintf(stderr,
+            "Some form of user verification method required for registration "
+            "but none are enabled. Please configure one first.\n");
     goto err;
   }
 
