@@ -197,7 +197,8 @@ static int make_cred(const char *path, fido_dev_t *dev, fido_cred_t *cred,
   }
 
   if ((flags & PIN_SET) &&
-      (r == FIDO_ERR_PIN_REQUIRED || r == FIDO_ERR_UV_BLOCKED)) {
+      (r == FIDO_ERR_PIN_REQUIRED || r == FIDO_ERR_UV_BLOCKED ||
+       r == FIDO_ERR_PIN_BLOCKED)) {
     n = snprintf(prompt, sizeof(prompt), "Enter PIN for %s: ", path);
     if (n < 0 || (size_t) n >= sizeof(prompt)) {
       fprintf(stderr, "error: snprintf prompt");
