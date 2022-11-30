@@ -155,7 +155,9 @@ static fido_cred_t *prepare_cred(const struct args *const args) {
     goto err;
   }
 
-  if ((r = fido_cred_set_uv(cred, FIDO_OPT_OMIT)) != FIDO_OK) {
+  if ((r = fido_cred_set_uv(cred, args->user_verification ? FIDO_OPT_TRUE
+                                                          : FIDO_OPT_OMIT)) !=
+      FIDO_OK) {
     fprintf(stderr, "error: fido_cred_set_uv (%d) %s\n", r, fido_strerr(r));
     goto err;
   }
@@ -171,7 +173,7 @@ err:
 }
 
 static int make_cred(const char *path, fido_dev_t *dev, fido_cred_t *cred,
-                     int flags) {
+                     int flags, int force_pin) {
   char prompt[BUFSIZE];
   char pin[BUFSIZE];
   int n;
@@ -188,7 +190,12 @@ static int make_cred(const char *path, fido_dev_t *dev, fido_cred_t *cred,
     return -1;
   }
 
-  r = fido_dev_make_cred(dev, cred, NULL);
+  if (force_pin) {
+    r = FIDO_ERR_PIN_REQUIRED;
+  } else {
+    r = fido_dev_make_cred(dev, cred, NULL);
+  }
+
   if ((flags & PIN_SET) &&
       (r == FIDO_ERR_PIN_REQUIRED || r == FIDO_ERR_UV_BLOCKED)) {
     n = snprintf(prompt, sizeof(prompt), "Enter PIN for %s: ", path);
@@ -552,8 +559,8 @@ int main(int argc, char *argv[]) {
   if ((cred = prepare_cred(&args)) == NULL)
     goto err;
 
-  if (make_cred(path, dev, cred, flags) != 0 || verify_cred(cred) != 0 ||
-      print_authfile_line(&args, cred) != 0)
+  if (make_cred(path, dev, cred, flags, args.pin_verification) != 0 ||
+      verify_cred(cred) != 0 || print_authfile_line(&args, cred) != 0)
     goto err;
 
   exit_code = EXIT_SUCCESS;
